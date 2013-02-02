@@ -1,3 +1,23 @@
+acpid (1:2.0.7-1squeeze3) stable-security; urgency=low
+
+  * Rebuild to work around dak orig.tar.gz ugliness
+
+ -- Moritz Muehlenhoff <jmm@debian.org>  Thu, 08 Dec 2011 19:55:01 +0000
+
+acpid (1:2.0.7-1squeezy2) stable-security; urgency=low
+
+  * Fix shell command injection in powerbtn.sh
+  * Fix CVE-2011-1159	
+
+ -- Moritz Muehlenhoff <jmm@debian.org>  Tue, 06 Dec 2011 20:28:04 +0100
+
+acpid (1:2.0.7-1squeezy1) stable-security; urgency=low
+
+  * Applied upstream patch to set umask to 0077 for scripts run
+    by acpid.
+
+ -- Michael Meskes <meskes@debian.org>  Tue, 02 Aug 2011 19:05:21 +0200
+
 acpid (1:2.0.7-1) unstable; urgency=low
 
   * Imported Upstream version 2.0.7

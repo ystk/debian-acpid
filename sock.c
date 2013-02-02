@@ -73,7 +73,7 @@ process_sock(int fd)
 	if (creds.uid != 0) {
 		non_root_clients++;
 	}
-	fcntl(cli_fd, F_SETFD, FD_CLOEXEC);
+	fcntl(cli_fd, F_SETFD, O_NONBLOCK);
 	snprintf(buf, sizeof(buf)-1, "%d[%d:%d]",
 		 creds.pid, creds.uid, creds.gid);
 	acpid_add_client(cli_fd, buf);

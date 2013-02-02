@@ -641,6 +641,7 @@ do_cmd_rule(struct rule *rule, const char *event)
 		if (acpid_debug && logevents) {
 			fprintf(stdout, "BEGIN HANDLER MESSAGES\n");
 		}
+		umask(0077);
 		execl("/bin/sh", "/bin/sh", "-c", action, NULL);
 		/* should not get here */
 		acpid_log(LOG_ERR, "execl(): %s\n", strerror(errno));
