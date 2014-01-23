@@ -29,6 +29,7 @@ extern mode_t socketmode;
 extern int clientmax;
 extern int non_root_clients;
 
-extern void open_sock();
+extern int is_socket(int fd);
+extern void open_sock(void);
 
 #endif /* SOCK_H__ */

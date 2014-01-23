@@ -9,11 +9,11 @@ Copyright:
 
 Copyright (C) 2000 Andrew Henroid
               2004 Tim Hockin (thockin@hockin.org) 
-              2008 Ted Felix (www.tedfelix.com)
+              2008-2011 Ted Felix (www.tedfelix.com)
 
 License:
 
 acpid is distributed under the terms of the GNU General Public License,
 version 2 or later. On Debian GNU/Linux system you can find a copy of this
-license in `/usr/share/common-licenses/GPL'.
+license in `/usr/share/common-licenses/GPL-2'.
 

@@ -30,9 +30,10 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <getopt.h>
-#include <stdarg.h>
+#include <dirent.h>
 
 #include "acpid.h"
+#include "log.h"
 #include "event.h"
 #include "connection_list.h"
 #include "proc.h"
@@ -80,16 +81,14 @@ main(int argc, char **argv)
 	/* open the log */
 	open_log();
 	
-	if (!netlink)
-	{
+	if (!netlink) {
 		/* open the acpi event file in the proc fs */
 		/* if the open fails, try netlink */
 		if (open_proc())
 			netlink = 1;
 	}
 
-	if (netlink)
-	{
+	if (netlink) {
 		/* open the input layer */
 		open_input();
 
@@ -105,8 +104,9 @@ main(int argc, char **argv)
 		open_sock();
 	}
 
-	/* if we're running in foreground, we don't daemonize */
-	if (!foreground) {
+	/* if we're running in the background, and we're not being started */
+	/* by systemd */
+	if (!foreground  &&  !is_socket(STDIN_FILENO)) {
 		if (daemonize() < 0)
 			exit(EXIT_FAILURE);
 	}
@@ -116,7 +116,7 @@ main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 	
-	acpid_log(LOG_INFO, "starting up with %s\n",
+	acpid_log(LOG_INFO, "starting up with %s",
 		netlink ? "netlink and the input layer" : "proc fs");
 
 	/* trap key signals */
@@ -136,12 +136,11 @@ main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	acpid_log(LOG_INFO, "waiting for events: event logging is %s\n",
+	acpid_log(LOG_INFO, "waiting for events: event logging is %s",
 	    logevents ? "on" : "off");
 
 	/* main loop */
-	while (1)
-	{
+	while (1) {
 		fd_set readfds;
 		int nready;
 		int i;
@@ -151,12 +150,10 @@ main(int argc, char **argv)
 		readfds = *get_fdset();
 
 		/* wait on data */
-		nready = select(get_highestfd() + 1, &readfds, NULL, NULL, NULL);
+		nready = TEMP_FAILURE_RETRY(select(get_highestfd() + 1, &readfds, NULL, NULL, NULL));
 
-		if (nready < 0  &&  errno == EINTR) {
-			continue;
-		} else if (nready < 0) {
-			acpid_log(LOG_ERR, "select(): %s\n", strerror(errno));
+		if (nready < 0) {
+			acpid_log(LOG_ERR, "select(): %s", strerror(errno));
 			continue;
 		}
 
@@ -164,8 +161,7 @@ main(int argc, char **argv)
 		acpid_close_dead_clients();
 
 		/* for each connection */
-		for (i = 0; i <= get_number_of_connections(); ++i)
-		{
+		for (i = 0; i <= get_number_of_connections(); ++i) {
 			int fd;
 
 			p = get_connection(i);
@@ -178,8 +174,7 @@ main(int argc, char **argv)
 			fd = p->fd;
 
 			/* if this file descriptor has data waiting */
-			if (FD_ISSET(fd, &readfds))
-			{
+			if (FD_ISSET(fd, &readfds)) {
 				/* delegate to this connection's process function */
 				p->process(fd);
 			}
@@ -253,6 +248,7 @@ handle_cmdline(int *argc, char ***argv)
 		case 'd':
 			foreground = 1;
 			acpid_debug++;
+            log_debug_to_stderr = 1;
 			break;
 		case 'e':
 			eventfile = optarg;
@@ -298,8 +294,7 @@ handle_cmdline(int *argc, char ***argv)
 			}
 			for (opt = opts, hlp = opts_help;
 			     opt->name;
-			     opt++, hlp++)
-			{
+			     opt++, hlp++) {
 				fprintf(stderr, "  -%c, --%s",
 					opt->val, opt->name);
 				size = strlen(opt->name);
@@ -321,12 +316,22 @@ handle_cmdline(int *argc, char ***argv)
 static void
 close_fds(void)
 {
-	int fd, max;
-	max = sysconf(_SC_OPEN_MAX);
-	for (fd = 3; fd < max; fd++)
-		close(fd);
-}
+    struct dirent *dent;
+    DIR *dirp;
+    char *endp;
+    long fd;
 
+    if ((dirp = opendir("/proc/self/fd")) != NULL) {
+        while ((dent = readdir(dirp)) != NULL) {
+            fd = strtol(dent->d_name, &endp, 10);
+            if (dent->d_name != endp && *endp == '\0' &&
+                fd >= 3 && fd != dirfd(dirp)) {
+                close((int) fd);
+            }
+        }
+        closedir(dirp);
+    }
+}
 static int
 daemonize(void)
 {
@@ -335,7 +340,7 @@ daemonize(void)
 	/* fork off the parent process */
 	pid = fork();
 	if (pid < 0) {
-		acpid_log(LOG_ERR, "fork: %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "fork: %s", strerror(errno));
 		return -1;
 	}
 	/* if we got a good PID, then we can exit the parent process */
@@ -353,14 +358,14 @@ daemonize(void)
 	/* detach the process from the parent (normally a shell) */
 	sid = setsid();
 	if (sid < 0) {
-		acpid_log(LOG_ERR, "setsid: %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "setsid: %s", strerror(errno));
 		return -1;
 	}
 
     /* Change the current working directory.  This prevents the current
        directory from being locked; hence not being able to remove it. */
 	if (chdir("/") < 0) {
-		acpid_log(LOG_ERR, "chdir(\"/\"): %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "chdir(\"/\"): %s", strerror(errno));
 		return -1;
 	}
 
@@ -388,21 +393,24 @@ std2null(void)
 	/* open /dev/null */
 	nullfd = open("/dev/null", O_RDWR);
 	if (nullfd < 0) {
-		acpid_log(LOG_ERR, "can't open /dev/null: %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "can't open /dev/null: %s", strerror(errno));
 		return -1;
 	}
 
 	/* set up stdin, stdout, stderr to /dev/null */
-	if (dup2(nullfd, STDIN_FILENO) != STDIN_FILENO) {
-		acpid_log(LOG_ERR, "dup2() stdin: %s\n", strerror(errno));
+
+	/* don't redirect stdin if we're being sent a socket by systemd */
+	if (!is_socket(STDIN_FILENO)  && 
+			dup2(nullfd, STDIN_FILENO) != STDIN_FILENO) {
+		acpid_log(LOG_ERR, "dup2() stdin: %s", strerror(errno));
 		return -1;
 	}
 	if (!acpid_debug && dup2(nullfd, STDOUT_FILENO) != STDOUT_FILENO) {
-		acpid_log(LOG_ERR, "dup2() stdout: %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "dup2() stdout: %s", strerror(errno));
 		return -1;
 	}
 	if (!acpid_debug && dup2(nullfd, STDERR_FILENO) != STDERR_FILENO) {
-		acpid_log(LOG_ERR, "dup2() stderr: %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "dup2() stderr: %s", strerror(errno));
 		return -1;
 	}
 
@@ -436,7 +444,7 @@ create_pidfile(void)
 	}
 
 	/* something went wrong */
-	acpid_log(LOG_ERR, "can't create pidfile %s: %s\n",
+	acpid_log(LOG_ERR, "can't create pidfile %s: %s",
 		    pidfile, strerror(errno));
 	return -1;
 }
@@ -445,7 +453,7 @@ void
 clean_exit_with_status(int status)
 {
 	acpid_cleanup_rules(1);
-	acpid_log(LOG_NOTICE, "exiting\n");
+	acpid_log(LOG_NOTICE, "exiting");
 	unlink(pidfile);
 	exit(status);
 }
@@ -459,34 +467,9 @@ clean_exit(int sig __attribute__((unused)))
 static void
 reload_conf(int sig __attribute__((unused)))
 {
-	acpid_log(LOG_NOTICE, "reloading configuration\n");
+	acpid_log(LOG_NOTICE, "reloading configuration");
 	acpid_cleanup_rules(0);
 	acpid_read_conf(confdir);
-}
-
-int
-#ifdef __GNUC__
-__attribute__((format(printf, 2, 3)))
-#endif
-acpid_log(int level, const char *fmt, ...)
-{
-	va_list args;
-
-	if (level == LOG_DEBUG) {
-		/* if "-d" has been specified */
-		if (acpid_debug) {
-			/* send debug output to stderr */
-			va_start(args, fmt);
-			vfprintf(stderr, fmt, args);
-			va_end(args);
-		}
-	} else {
-		va_start(args, fmt);
-		vsyslog(level, fmt, args);
-		va_end(args);
-	}
-
-	return 0;
 }
 
 int

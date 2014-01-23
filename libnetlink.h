@@ -2,7 +2,7 @@
 #define __LIBNETLINK_H__ 1
 
 #include <asm/types.h>
-// needed by netlink.h, should be in there
+/* needed by netlink.h, should be in there */
 #include <arpa/inet.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>

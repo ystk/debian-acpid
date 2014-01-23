@@ -28,8 +28,11 @@
 #include <errno.h>
 
 #include "acpid.h"
+#include "log.h"
 #include "event.h"
 #include "connection_list.h"
+
+#include "proc.h"
 
 const char *eventfile = ACPID_EVENTFILE;
 
@@ -48,7 +51,7 @@ process_proc(int fd)
 		if (logevents  &&  event != NULL) {
 			acpid_log(LOG_INFO,
 				"lockfile present, not processing "
-				"event \"%s\"\n", event);
+				"event \"%s\"", event);
 		}
 		return;
 	}
@@ -57,23 +60,23 @@ process_proc(int fd)
 	if (event) {
 		if (logevents) {
 			acpid_log(LOG_INFO,
-			          "procfs received event \"%s\"\n", event);
+			          "procfs received event \"%s\"", event);
 		}
 		acpid_handle_event(event);
 		if (logevents) {
 			acpid_log(LOG_INFO,
-				"procfs completed event \"%s\"\n", event);
+				"procfs completed event \"%s\"", event);
 		}
 	} else if (errno == EPIPE) {
 		acpid_log(LOG_WARNING,
-			"events file connection closed\n");
+			"events file connection closed");
 		exit(EXIT_FAILURE);
 	} else {
 		static int nerrs;
 		if (++nerrs >= ACPID_MAX_ERRS) {
 			acpid_log(LOG_ERR,
 				"too many errors reading "
-				"events file - aborting\n");
+				"events file - aborting");
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -85,28 +88,27 @@ open_proc()
 	int fd;
 	struct connection c;
 	
-	fd = open(eventfile, O_RDONLY);
+	/* O_CLOEXEC: Make sure scripts we exec() (in event.c) don't get our file 
+       descriptors. */
+	fd = open(eventfile, O_RDONLY | O_CLOEXEC);
 	if (fd < 0) {
 		if (errno == ENOENT) {
 			acpid_log(LOG_DEBUG, "Deprecated %s was not found.  "
-				"Trying netlink and the input layer...\n", eventfile);
+				"Trying netlink and the input layer...", eventfile);
 		} else {
-			acpid_log(LOG_ERR, "can't open %s: %s (%d)\n", eventfile, 
+			acpid_log(LOG_ERR, "can't open %s: %s (%d)", eventfile, 
 				strerror(errno), errno);
 		}
 		return -1;
 		
 	}
-
-    /* Make sure scripts we exec() (in event.c) don't get our file 
-       descriptors. */
-    fcntl(fd, F_SETFD, FD_CLOEXEC);
-
-	acpid_log(LOG_DEBUG, "proc fs opened successfully\n");
+	acpid_log(LOG_DEBUG, "proc fs opened successfully");
 
 	/* add a connection to the list */
 	c.fd = fd;
 	c.process = process_proc;
+	c.pathname = NULL;
+	c.kybd = 0;
 	add_connection(&c);
 
 	return 0;
@@ -129,10 +131,10 @@ read_line(int fd)
 
 		/* only go to BUFLEN-1 so there will always be a 0 at the end */
 		while (i < BUFLEN-1) {
-			r = read(fd, buf+i, 1);
-			if (r < 0 && errno != EINTR) {
+			r = TEMP_FAILURE_RETRY(read(fd, buf+i, 1));
+			if (r < 0) {
 				/* we should do something with the data */
-				acpid_log(LOG_ERR, "read(): %s\n",
+				acpid_log(LOG_ERR, "read(): %s",
 					strerror(errno));
 				return NULL;
 			} else if (r == 0) {
@@ -176,7 +178,7 @@ read_line(int fd)
 		/* ??? This memory is leaked since it is never freed */
 		buf = realloc(buf, buflen);
 		if (!buf) {
-			acpid_log(LOG_ERR, "malloc(%d): %s\n",
+			acpid_log(LOG_ERR, "malloc(%d): %s",
 				buflen, strerror(errno));
 			return NULL;
 		}
@@ -186,7 +188,7 @@ read_line(int fd)
 			r = read(fd, buf+i, 1);
 			if (r < 0 && errno != EINTR) {
 				/* we should do something with the data */
-				acpid_log(LOG_ERR, "read(): %s\n",
+				acpid_log(LOG_ERR, "read(): %s",
 					strerror(errno));
 				return NULL;
 			} else if (r == 0) {

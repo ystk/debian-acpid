@@ -23,8 +23,6 @@
 #ifndef ACPID_H__
 #define ACPID_H__
 
-#include <syslog.h>
-
 #define ACPI_PROCDIR 		"/proc/acpi"
 #define ACPID_EVENTFILE		ACPI_PROCDIR "/event"
 #define ACPID_CONFDIR		"/etc/acpi/events"
@@ -48,9 +46,7 @@ extern int acpid_debug;
 extern int logevents;
 extern const char *progname;
 
-extern int acpid_log(int level, const char *fmt, ...);
-
-extern int locked();
+extern int locked(void);
 
 extern void clean_exit_with_status(int status);
 

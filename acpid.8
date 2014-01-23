@@ -54,6 +54,11 @@ all ACPI events to the client.  The client has the responsibility of filtering
 for messages about which it cares.  \fBacpid\fP will not close the client
 socket except in the case of a SIGHUP or \fBacpid\fP exiting.
 .PP
+For faster startup, this socket can be passed in as stdin so that \fBacpid\fP
+need not create the socket.  In addition, if a socket is passed in as stdin, 
+\fBacpid\fP will not daemonize.  It will be run in foreground.  This behavior 
+is provided to support systemd(1).
+.PP
 .B acpid
 will log all of its activities, as well as the stdout and stderr of any
 actions, to syslog.
@@ -131,7 +136,7 @@ Then create a file named /etc/acpi/power.sh that contains the following:
 .IP
 /sbin/shutdown \-h now "Power button pressed"
 .PP
-Now, when acpid is running, a press of the power button will cause the
+Now, when \fBacpid\fP is running, a press of the power button will cause the
 rule in /etc/acpi/events/power to trigger the script in /etc/acpi/power.sh.
 The script will then shut down the system.
 .SH DEPENDENCIES
@@ -154,7 +159,8 @@ The script will then shut down the system.
 .SH BUGS
 There are no known bugs.  To file bug reports, see \fBAUTHORS\fP below.
 .SH SEE ALSO
-regcomp(3), sh(1), socket(2), connect(2)
+regcomp(3), sh(1), socket(2), connect(2), systemd(1), acpi_listen(8),
+kacpimon(8)
 .SH AUTHORS
 Ted Felix (www.tedfelix.com)
 .br

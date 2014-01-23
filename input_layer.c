@@ -39,8 +39,11 @@
 
 /* local */
 #include "acpid.h"
+#include "log.h"
 #include "connection_list.h"
 #include "event.h"
+
+#include "input_layer.h"
 
 #define DIM(a)  (sizeof(a) / sizeof(a[0]))
 
@@ -52,6 +55,7 @@ struct evtab_entry {
 /* Event Table: Events we are interested in and their strings.  Use 
    evtest.c, acpi_genl, or kacpimon to find new events to add to this
    table. */
+
 static struct evtab_entry evtab[] = {
 	{{{0,0}, EV_KEY, KEY_POWER, 1}, "button/power PBTN 00000080 00000000"},
 	{{{0,0}, EV_KEY, KEY_SUSPEND, 1}, 
@@ -100,6 +104,35 @@ static struct evtab_entry evtab[] = {
 	{{{0,0}, EV_MSC, 4, 18}, "button/fnpgdown FNPGDOWN 00000080 00000000"},
 #endif
 
+/* This test probably belongs in configure.ac. */
+#ifdef SW_HEADPHONE_INSERT
+ #ifndef SW_LINEIN_INSERT
+  #define SW_LINEIN_INSERT 0x0d
+ #endif
+	{{{0,0}, EV_SW, SW_HEADPHONE_INSERT, 0},
+		"jack/headphone HEADPHONE unplug"},
+	{{{0,0}, EV_SW, SW_HEADPHONE_INSERT, 1},
+		"jack/headphone HEADPHONE plug"},
+	{{{0,0}, EV_SW, SW_MICROPHONE_INSERT, 0},
+		"jack/microphone MICROPHONE unplug"},
+	{{{0,0}, EV_SW, SW_MICROPHONE_INSERT, 1},
+		"jack/microphone MICROPHONE plug"},
+	{{{0,0}, EV_SW, SW_LINEOUT_INSERT, 0},
+		"jack/lineout LINEOUT unplug"},
+	{{{0,0}, EV_SW, SW_LINEOUT_INSERT, 1},
+		"jack/lineout LINEOUT plug"},
+	{{{0,0}, EV_SW, SW_VIDEOOUT_INSERT, 0},
+		"jack/videoout VIDEOOUT unplug"},
+	{{{0,0}, EV_SW, SW_VIDEOOUT_INSERT, 1},
+		"jack/videoout VIDEOOUT plug"},
+	{{{0,0}, EV_SW, SW_LINEIN_INSERT, 0},
+		"jack/linein LINEIN unplug"},
+	{{{0,0}, EV_SW, SW_LINEIN_INSERT, 1},
+		"jack/linein LINEIN plug"},
+#else
+ #warning SW_HEADPHONE_INSERT not found in input_layer.h. Support for plug/unplug events will be disabled. Please upgrade your kernel headers to Linux-3.2 or newer.
+#endif
+
 	{{{0,0}, EV_KEY, KEY_ZOOM, 1}, "button/zoom ZOOM 00000080 00000000"},
 	/* typical events file has "video.* 00000087" */
 	{{{0,0}, EV_KEY, KEY_BRIGHTNESSDOWN, 1}, 
@@ -134,7 +167,7 @@ static struct evtab_entry evtab[] = {
 	{{{0,0}, EV_KEY, KEY_BRIGHTNESS_ZERO, 1}, 
  		"video/brightnesszero BZRO 00000088 00000000"},
 	{{{0,0}, EV_KEY, KEY_DISPLAY_OFF, 1}, 
- 		"video/displayoff DOFF 00000089 00000000"}
+			"video/displayoff DOFF 00000089 00000000"}
 };
 
 /*----------------------------------------------------------------------*/
@@ -146,7 +179,9 @@ event_string(struct input_event event)
 	unsigned i;
 	
 	/* for each entry in the event table */
-	/* ??? is there a faster way? */
+	/* ??? Is there a faster way?  This is triggered every time the user
+	 *     presses a key.  Maybe a simple hash algorithm?  Or a simple check
+	 *     for very common keys (alphanumeric) and bail before this?  */
 	for (i = 0; i < DIM(evtab); ++i)
 	{
 		/* if this is a matching event, return its string */
@@ -181,35 +216,35 @@ need_event(int type, int code)
 
 /*-----------------------------------------------------------------*/
 /* called when an input layer event is received */
-void process_input(int fd)
+static void process_input(int fd)
 {
 	struct input_event event;
 	ssize_t nbytes;
 	const char *str;
 	static int nerrs;
+	struct connection *c;
+	char str2[100];
 
-	nbytes = read(fd, &event, sizeof(event));
+	nbytes = TEMP_FAILURE_RETRY ( read(fd, &event, sizeof(event)) );
 
 	if (nbytes == 0) {
-		acpid_log(LOG_WARNING, "input layer connection closed\n");
+		acpid_log(LOG_WARNING, "input layer connection closed");
 		exit(EXIT_FAILURE);
 	}
 	
 	if (nbytes < 0) {
-		/* if it's a signal, bail */
-		if (errno == EINTR)
-			return;
 		if (errno == ENODEV) {
-			acpid_log(LOG_WARNING, "input device has been disconnected\n");
+			acpid_log(LOG_WARNING, "input device has been disconnected, fd %d",
+			          fd);
 			delete_connection(fd);
 			return;
 		}
-		acpid_log(LOG_ERR, "input layer read error: %s (%d)\n",
+		acpid_log(LOG_ERR, "input layer read error: %s (%d)",
 			strerror(errno), errno);
 		if (++nerrs >= ACPID_MAX_ERRS) {
 			acpid_log(LOG_ERR,
 				"too many errors reading "
-				"input layer - aborting\n");
+				"input layer - aborting");
 			exit(EXIT_FAILURE);
 		}
 		return;
@@ -220,36 +255,52 @@ void process_input(int fd)
 	
 	if (nbytes != sizeof(event)) {
 		acpid_log(LOG_WARNING, "input layer unexpected length: "
-			"%d   expected: %d\n", nbytes, sizeof(event));
+			"%zd   expected: %zd", nbytes, sizeof(event));
 		return;
 	}
 
+	c = find_connection(fd);
+	
+	/* if we're getting scancodes, we probably have a keyboard */
+	if (event.type == EV_MSC  &&  event.code == MSC_SCAN) {
+		if (c)
+			c->kybd = 1;  /* appears to be a keyboard device */
+	}
+	
 	/* convert the event into a string */
 	str = event_string(event);
 	/* if this is not an event we care about, bail */
 	if (str == NULL)
 		return;
+
+	/* If we suspect this is a keyboard, and we have enough space, tack a 
+	 * "K" on to the end of the event string. */
+	if (c  &&  c->kybd  &&  strnlen(str, sizeof(str2)) <= sizeof(str2) - 3) {
+		strcpy(str2, str);
+		strcat(str2, " K");
+		str = str2;
+	}
 	
 	/* if we're locked, don't process the event */
 	if (locked()) {
 		if (logevents) {
 			acpid_log(LOG_INFO,
 				"lockfile present, not processing "
-				"input layer event \"%s\"\n", str);
+				"input layer event \"%s\"", str);
 		}
 		return;
 	}
 
 	if (logevents)
 		acpid_log(LOG_INFO,
-			"received input layer event \"%s\"\n", str);
+			"received input layer event \"%s\"", str);
 	
 	/* send the event off to the handler */
 	acpid_handle_event(str);
 
 	if (logevents)
 		acpid_log(LOG_INFO,
-			"completed input layer event \"%s\"\n", str);
+			"completed input layer event \"%s\"", str);
 }
 
 #define BITS_PER_LONG (sizeof(long) * 8)
@@ -299,26 +350,36 @@ int open_inputfile(const char *filename)
 {
 	int fd;
 	struct connection c;
-
-	fd = open(filename, O_RDONLY | O_NONBLOCK);
-
-    /* Make sure scripts we exec() (in event.c) don't get our file 
+	
+	/* O_CLOEXEC: Make sure scripts we exec() (in event.c) don't get our file 
        descriptors. */
-    fcntl(fd, F_SETFD, FD_CLOEXEC);
+	fd = open(filename, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 
 	if (fd >= 0) {
+		char evname[256];
+		
 		/* if this file doesn't have events we need, indicate failure */
 		if (!has_event(fd)) {
 			close(fd);
 			return -1;
 		}
 
-		acpid_log(LOG_DEBUG, "input layer %s "
-			"opened successfully\n", filename);
+		/* get this event file's name for debugging */
+		strcpy(evname, "Unknown");
+		ioctl(fd, EVIOCGNAME(sizeof(evname)), evname);
+
+		acpid_log(LOG_DEBUG, "input layer %s (%s) "
+			"opened successfully, fd %d", filename, evname, fd);
 
 		/* add a connection to the list */
 		c.fd = fd;
 		c.process = process_input;
+		/* delete_connection() will free */
+		c.pathname = malloc(strlen(filename) + 1);
+		if (c.pathname)
+			strcpy(c.pathname, filename);
+		/* assume not a keyboard until we see a scancode */
+		c.kybd = 0;
 		add_connection(&c);
 
 		return 0;  /* success */
@@ -350,7 +411,7 @@ void open_input(void)
 	}
 
 	if (!success)
-		acpid_log(LOG_ERR, "cannot open input layer\n");
+		acpid_log(LOG_ERR, "cannot open input layer");
 
 	globfree(&globbuf);
 }

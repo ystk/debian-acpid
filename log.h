@@ -1,8 +1,8 @@
 /*
- *  proc.h - ACPI daemon proc filesystem interface
+ *  log.h - ACPI daemon logging
  *
- *  Portions Copyright (C) 2000 Andrew Henroid
- *  Portions Copyright (C) 2001 Sun Microsystems
+ *  Copyright (C) 1999-2000 Andrew Henroid
+ *  Copyright (C) 2001 Sun Microsystems
  *  Portions Copyright (C) 2004 Tim Hockin (thockin@hockin.org)
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -20,11 +20,18 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef PROC_H__
-#define PROC_H__
+#ifndef LOG_H__
+#define LOG_H__
 
-extern const char *eventfile;
+/* for LOG_ERR, LOG_DEBUG, LOG_INFO, etc... */
+#include <syslog.h>
 
-extern int open_proc(void);
+/*
+ * Set to 1 to send LOG_DEBUG logging to stderr, zero to ignore LOG_DEBUG
+ * logging.  Default is zero.
+ */
+extern int log_debug_to_stderr;
 
-#endif /* PROC_H__ */
+extern int acpid_log(int level, const char *fmt, ...) __attribute__((format(printf,2,3)));
+
+#endif /* LOG_H__ */

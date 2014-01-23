@@ -35,6 +35,7 @@
 
 /* local */
 #include "acpid.h"
+#include "log.h"
 #include "event.h"
 
 #include "libnetlink.h"
@@ -43,6 +44,8 @@
 
 #include "acpi_ids.h"
 #include "connection_list.h"
+
+#include "netlink.h"
 
 static void
 format_netlink(struct nlmsghdr *msg)
@@ -57,7 +60,7 @@ format_netlink(struct nlmsghdr *msg)
 	/* if this message doesn't have the proper family ID, drop it */
 	if (msg->nlmsg_type != acpi_ids_getfamily()) {
 		if (logevents) {
-			acpid_log(LOG_INFO, "wrong netlink family ID.\n");
+			acpid_log(LOG_INFO, "wrong netlink family ID.");
 		}
 		return;
 	}
@@ -66,7 +69,7 @@ format_netlink(struct nlmsghdr *msg)
 
 	if (len < 0) {
 		acpid_log(LOG_WARNING,
-			"wrong netlink controller message len: %d\n", len);
+			"wrong netlink controller message len: %d", len);
 		return;
 	}
 
@@ -90,26 +93,26 @@ format_netlink(struct nlmsghdr *msg)
 			if (logevents) {
 				acpid_log(LOG_INFO,
 					"lockfile present, not processing "
-					"netlink event \"%s\"\n", buf);
+					"netlink event \"%s\"", buf);
 			}
 			return;
 		}
 
 		if (logevents)
 			acpid_log(LOG_INFO,
-				"received netlink event \"%s\"\n", buf);
+				"received netlink event \"%s\"", buf);
 
 		/* send the event off to the handler */
 		acpid_handle_event(buf);
 
 		if (logevents)
 			acpid_log(LOG_INFO,
-				"completed netlink event \"%s\"\n", buf);
+				"completed netlink event \"%s\"", buf);
 	}
 }
 
 /* (based on rtnl_listen() in libnetlink.c) */
-void
+static void
 process_netlink(int fd)
 {
 	int status;
@@ -140,33 +143,29 @@ process_netlink(int fd)
 	iov.iov_len = sizeof(buf);
 	
 	/* read the data into the buffer */
-	status = recvmsg(fd, &msg, 0);
+	status = TEMP_FAILURE_RETRY ( recvmsg(fd, &msg, MSG_CMSG_CLOEXEC) );
 
 	/* if there was a problem, print a message and keep trying */
 	if (status < 0) {
-		/* if we were interrupted by a signal, bail */
-		if (errno == EINTR)
-			return;
-		
-		acpid_log(LOG_ERR, "netlink read error: %s (%d)\n",
+		acpid_log(LOG_ERR, "netlink read error: %s (%d)",
 			strerror(errno), errno);
 		if (++nerrs >= ACPID_MAX_ERRS) {
 			acpid_log(LOG_ERR,
 				"too many errors reading via "
-				"netlink - aborting\n");
+				"netlink - aborting");
 			exit(EXIT_FAILURE);
 		}
 		return;
 	}
 	/* if an orderly shutdown has occurred, we're done */
 	if (status == 0) {
-		acpid_log(LOG_WARNING, "netlink connection closed\n");
+		acpid_log(LOG_WARNING, "netlink connection closed");
 		exit(EXIT_FAILURE);
 	}
 	/* check to see if the address length has changed */
 	if (msg.msg_namelen != sizeof(nladdr)) {
 		acpid_log(LOG_WARNING, "netlink unexpected length: "
-			"%d   expected: %d\n", msg.msg_namelen, sizeof(nladdr));
+			"%d   expected: %zd", msg.msg_namelen, sizeof(nladdr));
 		return;
 	}
 	
@@ -177,11 +176,11 @@ process_netlink(int fd)
 
 		if (l < 0  ||  len > status) {
 			if (msg.msg_flags & MSG_TRUNC) {
-				acpid_log(LOG_WARNING, "netlink msg truncated (1)\n");
+				acpid_log(LOG_WARNING, "netlink msg truncated (1)");
 				return;
 			}
 			acpid_log(LOG_WARNING,
-				"malformed netlink msg, length %d\n", len);
+				"malformed netlink msg, length %d", len);
 			return;
 		}
 
@@ -192,11 +191,11 @@ process_netlink(int fd)
 		h = (struct nlmsghdr*)((char*)h + NLMSG_ALIGN(len));
 	}
 	if (msg.msg_flags & MSG_TRUNC) {
-		acpid_log(LOG_WARNING, "netlink msg truncated (2)\n");
+		acpid_log(LOG_WARNING, "netlink msg truncated (2)");
 		return;
 	}
 	if (status) {
-		acpid_log(LOG_WARNING, "netlink remnant of size %d\n", status);
+		acpid_log(LOG_WARNING, "netlink remnant of size %d", status);
 		return;
 	}
 
@@ -209,7 +208,7 @@ static __u32
 nl_mgrp(__u32 group)
 {
 	if (group > 31) {
-		acpid_log(LOG_ERR, "Unexpected group number %d\n", group);
+		acpid_log(LOG_ERR, "Unexpected group number %d", group);
 		return 0;
 	}
 	return group ? (1 << (group - 1)) : 0;
@@ -223,15 +222,17 @@ void open_netlink(void)
 	/* open the appropriate netlink socket for input */
 	if (rtnl_open_byproto(
 		&rth, nl_mgrp(acpi_ids_getgroup()), NETLINK_GENERIC) < 0) {
-		acpid_log(LOG_ERR, "cannot open generic netlink socket\n");
+		acpid_log(LOG_ERR, "cannot open generic netlink socket");
 		return;
 	}
 
-	acpid_log(LOG_DEBUG, "netlink opened successfully\n");
+	acpid_log(LOG_DEBUG, "netlink opened successfully");
 
 	/* add a connection to the list */
 	c.fd = rth.fd;
 	c.process = process_netlink;
+	c.pathname = NULL;
+	c.kybd = 0;
 	add_connection(&c);
 }
 

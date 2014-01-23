@@ -1,3 +1,118 @@
+acpid (1:2.0.16-1+deb7u1) testing-proposed-updates; urgency=low
+
+  * Fix acpid problem with systemd for testing, too. (Closes: #701538)
+
+ -- Michael Meskes <meskes@debian.org>  Sat, 13 Apr 2013 21:49:51 +0200
+
+acpid (1:2.0.16-1) unstable; urgency=low
+
+  * Imported Upstream version 2.0.16
+
+ -- Michael Meskes <meskes@debian.org>  Sun, 01 Apr 2012 12:38:32 +0200
+
+acpid (1:2.0.15-2) unstable; urgency=low
+
+  * Applied upstream's patch to fix socket permissions. (Closes: #664705)
+
+ -- Michael Meskes <meskes@debian.org>  Wed, 21 Mar 2012 09:37:16 +0100
+
+acpid (1:2.0.15-1) unstable; urgency=low
+
+  * Imported Upstream version 2.0.15
+  * Migrated to debhleper 7.
+
+ -- Michael Meskes <meskes@debian.org>  Sun, 18 Mar 2012 14:44:34 +0100
+
+acpid (1:2.0.14-3) unstable; urgency=low
+
+  * Added upstream patch to remove pointless "See Also" section from manpage.
+    (Closes: #656676)
+  * Bumped Standards-Version to 3.9.3, no changes needed.
+  * Enable socket for systemd. (Closes: #661344)
+
+ -- Michael Meskes <meskes@debian.org>  Wed, 29 Feb 2012 13:24:37 +0100
+
+acpid (1:2.0.14-2) unstable; urgency=low
+
+  * Made init script start before/stop after gdm3 instead of gdm which does not
+    exist anymore. (Closes: #655075)
+  * Enable hardened build flags.
+    Thanks to Moritz Muehlenhoff <jmm@debian.org> (Closes: #653502)
+
+ -- Michael Meskes <meskes@debian.org>  Tue, 10 Jan 2012 17:27:11 +0100
+
+acpid (1:2.0.14-1) unstable; urgency=low
+
+  * Fix shell command injection in powerbtn.sh
+  * Imported Upstream version 2.0.14
+
+ -- Michael Meskes <meskes@debian.org>  Sun, 18 Dec 2011 14:41:11 +0100
+
+acpid (1:2.0.13-1) unstable; urgency=low
+
+  * Imported Upstream version 2.0.13
+  * Added systemd .service and .socket files.
+    Thanks to Helmut Grohne <helmut@subdivi.de> (Closes: #647556)
+
+ -- Michael Meskes <meskes@debian.org>  Thu, 17 Nov 2011 11:54:46 +0100
+
+acpid (1:2.0.12-1) unstable; urgency=low
+
+  * Imported Upstream version 2.0.12
+
+ -- Michael Meskes <meskes@debian.org>  Tue, 23 Aug 2011 12:57:56 +0200
+
+acpid (1:2.0.11-1) unstable; urgency=high
+
+  * Imported Upstream version 2.0.11 which sets umask to 0077 for scripts run
+    by acpid.
+  * Added build-arch and build-indep targets to rules file.
+
+ -- Michael Meskes <meskes@debian.org>  Mon, 01 Aug 2011 20:37:55 +0200
+
+acpid (1:2.0.10-1) unstable; urgency=low
+
+  * Imported Upstream version 2.0.10
+  * Bumped Standards-Version to 3.9.2, no changes needed.
+
+ -- Michael Meskes <meskes@debian.org>  Thu, 19 May 2011 15:51:12 +0200
+
+acpid (1:2.0.9-1) unstable; urgency=low
+
+  * Imported Upstream version 2.0.9
+
+ -- Michael Meskes <meskes@debian.org>  Sun, 17 Apr 2011 16:33:17 +0200
+
+acpid (1:2.0.8-4) unstable; urgency=low
+
+  * Updated homepage filed to point to new URL. (Closes: #618537)
+  * Removed all code handling /etc/init.d/hal which does not exist anymore in
+    newer versions. (Closes: #618905)
+
+ -- Michael Meskes <meskes@debian.org>  Fri, 25 Mar 2011 15:28:00 +0100
+
+acpid (1:2.0.8-3) unstable; urgency=low
+
+  * Allow build flags to be customized by setting DEB_BUILD_OPTIONS in the
+    build-time environment. Thanks to Jonathan Nieder <jrnieder@gmail.com>
+  * Remove variable that is not used in kacpimon.
+    Thanks to Jonathan Nieder <jrnieder@gmail.com> (Closes: #616306)
+
+ -- Michael Meskes <meskes@debian.org>  Fri, 11 Mar 2011 12:16:31 +0100
+
+acpid (1:2.0.8-2) unstable; urgency=low
+
+  * Make both sides of the comparison signed so the package builds again.
+    (Closes: #616194)
+
+ -- Michael Meskes <meskes@debian.org>  Thu, 03 Mar 2011 12:14:12 +0100
+
+acpid (1:2.0.8-1) unstable; urgency=low
+
+  * Imported Upstream version 2.0.8
+
+ -- Michael Meskes <meskes@debian.org>  Wed, 16 Feb 2011 09:25:51 +0100
+
 acpid (1:2.0.7-1) unstable; urgency=low
 
   * Imported Upstream version 2.0.7
