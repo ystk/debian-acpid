@@ -1,5 +1,5 @@
 /*
- *  proc.h - ACPI daemon proc filesystem interface
+ *  log.c - ACPI daemon logging
  *
  *  Portions Copyright (C) 2000 Andrew Henroid
  *  Portions Copyright (C) 2001 Sun Microsystems
@@ -20,11 +20,37 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef PROC_H__
-#define PROC_H__
+#include <stdio.h>
+#include <syslog.h>
+#include <stdarg.h>
 
-extern const char *eventfile;
+#include "log.h"
 
-extern int open_proc(void);
+int log_debug_to_stderr = 0;
 
-#endif /* PROC_H__ */
+int
+#ifdef __GNUC__
+__attribute__((format(printf, 2, 3)))
+#endif
+acpid_log(int level, const char *fmt, ...)
+{
+	va_list args;
+
+	if (level == LOG_DEBUG) {
+		/* if "-d" has been specified */
+		if (log_debug_to_stderr) {
+			/* send debug output to stderr */
+			va_start(args, fmt);
+			vfprintf(stderr, fmt, args);
+			va_end(args);
+
+            fprintf(stderr, "\n");
+		}
+	} else {
+		va_start(args, fmt);
+		vsyslog(level, fmt, args);
+		va_end(args);
+	}
+
+	return 0;
+}

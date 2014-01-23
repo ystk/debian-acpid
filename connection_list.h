@@ -35,7 +35,16 @@ struct connection
 	int fd;
 
 	/* process incoming data on the connection */
+	/* ??? suggest passing a pointer to this connection struct */
 	void (* process)(int fd);
+
+	/* Optional.  Used by find_connection_name() to find the connection for a 
+	   specific file.  Set to NULL if not specified.  Memory will be freed 
+	   with free() when connection is deleted. */
+	char *pathname;
+
+	/* 0 indicates this is probably not a keyboard device */
+	int kybd;
 };
 
 /* add a connection to the list */
@@ -45,18 +54,25 @@ extern void add_connection(struct connection *p);
 extern void delete_connection(int fd);
 
 /* find a connection in the list by file descriptor */
+/* ??? This routine is unnecessary.  When we call the connection's process
+ *     routine, we should pass a pointer to the connection.  That will have
+ *     the usual fd along with everything else. */
 extern struct connection *find_connection(int fd);
 
+/* find a connection in the list by pathname */
+/* ??? unused last I checked */
+extern struct connection *find_connection_name(char *pathname);
+
 /* get the number of connections in the list */
-extern int get_number_of_connections();
+extern int get_number_of_connections(void);
 
 /* get a specific connection by index from the list */
 extern struct connection *get_connection(int i);
 
 /* get an fd_set with all the fd's that have been added to the list */
-extern const fd_set *get_fdset();
+extern const fd_set *get_fdset(void);
 
 /* get the highest fd that was added to the list */
-extern int get_highestfd();
+extern int get_highestfd(void);
 
 #endif /* CONNECTION_LIST_H__ */

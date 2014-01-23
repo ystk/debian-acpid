@@ -15,7 +15,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <net/if_arp.h>
 #include <sys/socket.h>
@@ -44,7 +43,7 @@ int rtnl_open_byproto(struct rtnl_handle *rth, unsigned subscriptions,
 
 	memset(rth, 0, sizeof(rth));
 
-	rth->fd = socket(AF_NETLINK, SOCK_RAW, protocol);
+	rth->fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, protocol);
 	if (rth->fd < 0) {
 		perror("Cannot open netlink socket");
 		return -1;
@@ -172,11 +171,9 @@ int rtnl_dump_filter(struct rtnl_handle *rth,
 		struct nlmsghdr *h;
 
 		iov.iov_len = sizeof(buf);
-		status = recvmsg(rth->fd, &msg, 0);
+		status = TEMP_FAILURE_RETRY ( recvmsg(rth->fd, &msg, MSG_CMSG_CLOEXEC) );
 
 		if (status < 0) {
-			if (errno == EINTR)
-				continue;
 			perror("OVERRUN");
 			continue;
 		}
@@ -275,11 +272,9 @@ int rtnl_talk(struct rtnl_handle *rtnl, struct nlmsghdr *n, pid_t peer,
 
 	while (1) {
 		iov.iov_len = sizeof(buf);
-		status = recvmsg(rtnl->fd, &msg, 0);
+		status = TEMP_FAILURE_RETRY ( recvmsg(rtnl->fd, &msg, MSG_CMSG_CLOEXEC) );
 
 		if (status < 0) {
-			if (errno == EINTR)
-				continue;
 			perror("OVERRUN");
 			continue;
 		}
@@ -379,11 +374,9 @@ int rtnl_listen(struct rtnl_handle *rtnl,
 	iov.iov_base = buf;
 	while (1) {
 		iov.iov_len = sizeof(buf);
-		status = recvmsg(rtnl->fd, &msg, 0);
+		status = TEMP_FAILURE_RETRY ( recvmsg(rtnl->fd, &msg, MSG_CMSG_CLOEXEC) );
 
 		if (status < 0) {
-			if (errno == EINTR)
-				continue;
 			perror("OVERRUN");
 			continue;
 		}
@@ -441,14 +434,12 @@ int rtnl_from_file(FILE *rtnl, rtnl_filter_t handler,
 	nladdr.nl_groups = 0;
 
 	while (1) {
-		int err, len, type;
+		int err, len;
 		int l;
 
-		status = fread(&buf, 1, sizeof(*h), rtnl);
+		status = TEMP_FAILURE_RETRY ( fread(&buf, 1, sizeof(*h), rtnl) );
 
 		if (status < 0) {
-			if (errno == EINTR)
-				continue;
 			perror("rtnl_from_file: fread");
 			return -1;
 		}
@@ -456,7 +447,6 @@ int rtnl_from_file(FILE *rtnl, rtnl_filter_t handler,
 			return 0;
 
 		len = h->nlmsg_len;
-		type= h->nlmsg_type;
 		l = len - sizeof(*h);
 
 		if (l<0 || (unsigned)len>sizeof(buf)) {
@@ -518,7 +508,7 @@ int addattr_l(struct nlmsghdr *n, int maxlen, int type, const void *data,
 
 int addraw_l(struct nlmsghdr *n, int maxlen, const void *data, int len)
 {
-	if ((int)NLMSG_ALIGN(n->nlmsg_len) + NLMSG_ALIGN(len) > maxlen) {
+	if ((int)NLMSG_ALIGN(n->nlmsg_len) + (int)NLMSG_ALIGN(len) > maxlen) {
 		fprintf(stderr, "addraw_l ERROR: message exceeded bound of %d\n",maxlen);
 		return -1;
 	}

@@ -36,9 +36,10 @@
 #include <signal.h>
 
 #include "acpid.h"
+#include "log.h"
 #include "sock.h"
 #include "ud_socket.h"
-
+#include "event.h"
 /*
  * What is a rule?  It's polymorphic, pretty much.
  */
@@ -75,7 +76,7 @@ static void free_rule(struct rule *r);
 static void lock_rules(void);
 static void unlock_rules(void);
 static sigset_t *signals_handled(void);
-static struct rule *parse_file(const char *file);
+static struct rule *parse_file(int fd_rule, const char *file);
 static struct rule *parse_client(int client);
 static int do_cmd_rule(struct rule *r, const char *event);
 static int do_client_rule(struct rule *r, const char *event);
@@ -91,7 +92,6 @@ acpid_read_conf(const char *confdir)
 {
 	DIR *dir;
 	struct dirent *dirent;
-	char *file = NULL;
 	int nrules = 0;
 	regex_t preg;
 	int rc = 0;
@@ -100,7 +100,7 @@ acpid_read_conf(const char *confdir)
 
 	dir = opendir(confdir);
 	if (!dir) {
-		acpid_log(LOG_ERR, "opendir(%s): %s\n",
+		acpid_log(LOG_ERR, "opendir(%s): %s",
 			confdir, strerror(errno));
 		unlock_rules();
 		return -1;
@@ -109,18 +109,17 @@ acpid_read_conf(const char *confdir)
 	/* Compile the regular expression.  This is based on run-parts(8). */
 	rc = regcomp(&preg, "^[a-zA-Z0-9_-]+$", RULE_REGEX_FLAGS);
 	if (rc) {
-		acpid_log(LOG_ERR, "regcomp(): %d\n", rc);
+		acpid_log(LOG_ERR, "regcomp(): %d", rc);
 		unlock_rules();
 		return -1;
 	}
 
 	/* scan all the files */
 	while ((dirent = readdir(dir))) {
-		int len;
 		struct rule *r;
 		struct stat stat_buf;
-
-		len = strlen(dirent->d_name);
+        char *file = NULL;  /* rename: filename */
+        int fd_rule;
 
 		/* skip "." and ".." */
 		if (strncmp(dirent->d_name, ".", sizeof(dirent->d_name)) == 0)
@@ -128,50 +127,60 @@ acpid_read_conf(const char *confdir)
 		if (strncmp(dirent->d_name, "..", sizeof(dirent->d_name)) == 0)
 			continue;
 
+        if (asprintf(&file, "%s/%s", confdir, dirent->d_name) < 0) {
+            acpid_log(LOG_ERR, "asprintf: %s", strerror(errno));
+            closedir(dir);
+            unlock_rules();
+            return -1;
+        }
+
 		/* skip any files that don't match the run-parts convention */
 		if (regexec(&preg, dirent->d_name, 0, NULL, 0) != 0) {
-			acpid_log(LOG_INFO, "skipping conf file %s/%s\n", 
-				confdir, dirent->d_name);
+			acpid_log(LOG_INFO, "skipping conf file %s", file);
+            free(file);
 			continue;
 		}
 
-		/* Compute the length of the full path name adding one for */
-		/* the slash and one more for the NULL. */
-		len += strlen(confdir) + 2;
+        /* ??? Check for DT_UNKNOWN and do this, then "else if" on not DT_REG
+               and do the same as the !S_ISREG() branch below. */
+        if (dirent->d_type != DT_REG) { /* may be DT_UNKNOWN ...*/
+            /* allow only regular files and symlinks to files */
+            if (fstatat(dirfd(dir), dirent->d_name, &stat_buf, 0) != 0) {
+			    acpid_log(LOG_ERR, "fstatat(%s): %s", file, strerror(errno));
+			    free(file);
+			    continue; /* keep trying the rest of the files */
+		    }
+		    if (!S_ISREG(stat_buf.st_mode)) {
+                acpid_log(LOG_INFO, "skipping non-file %s", file);
+                free(file);
+                continue; /* skip non-regular files */
+            }
+        }
 
-		file = malloc(len);
-		if (!file) {
-			acpid_log(LOG_ERR, "malloc(): %s\n", strerror(errno));
-			unlock_rules();
-			return -1;
-		}
-		snprintf(file, len, "%s/%s", confdir, dirent->d_name);
-
-		/* allow only regular files and symlinks to files */
-		if (stat(file, &stat_buf) != 0) {
-			acpid_log(LOG_ERR, "stat(%s): %s\n", file,
-				strerror(errno));
-			free(file);
-			continue; /* keep trying the rest of the files */
-		}
-		if (!S_ISREG(stat_buf.st_mode)) {
-			acpid_log(LOG_INFO, "skipping non-file %s\n", file);
-			free(file);
-			continue; /* skip non-regular files */
-		}
-
-		r = parse_file(file);
+        /* open the rule file (might want to move this into parse_file()?) */
+		if ((fd_rule = openat(dirfd(dir), dirent->d_name, 
+                              O_RDONLY|O_CLOEXEC|O_NONBLOCK)) == -1) {
+                /* something went _really_ wrong.. Not Gonna Happen(tm) */
+                acpid_log(LOG_ERR, "openat(%s): %s", file, strerror(errno));
+                free(file);
+                /* ??? Too extreme?  Why not just continue? */
+                closedir(dir);
+                unlock_rules();
+                return -1;
+        }
+        /* fd is closed by parse_file() */
+		r = parse_file(fd_rule, file);
 		if (r) {
 			enlist_rule(&cmd_list, r);
 			nrules++;
 		}
 		free(file);
 	}
+
 	closedir(dir);
 	unlock_rules();
 
-	acpid_log(LOG_INFO, "%d rule%s loaded\n",
-	    nrules, (nrules == 1)?"":"s");
+	acpid_log(LOG_INFO, "%d rule%s loaded", nrules, (nrules == 1)?"":"s");
 
 	return 0;
 }
@@ -188,7 +197,7 @@ acpid_cleanup_rules(int do_detach)
 	lock_rules();
 
 	if (acpid_debug >= 3) {
-		acpid_log(LOG_DEBUG, "cleaning up rules\n");
+		acpid_log(LOG_DEBUG, "cleaning up rules");
 	}
 
 	if (do_detach) {
@@ -218,18 +227,19 @@ acpid_cleanup_rules(int do_detach)
 }
 
 static struct rule *
-parse_file(const char *file)
+parse_file(int fd_rule, const char *file)
 {
 	FILE *fp;
 	char buf[512];
 	int line = 0;
 	struct rule *r;
 
-	acpid_log(LOG_DEBUG, "parsing conf file %s\n", file);
+	acpid_log(LOG_DEBUG, "parsing conf file %s", file);
 
-	fp = fopen(file, "r");
+    /* r - read-only, e - O_CLOEXEC */
+	fp = fdopen(fd_rule, "re");
 	if (!fp) {
-		acpid_log(LOG_ERR, "fopen(%s): %s\n", file, strerror(errno));
+		acpid_log(LOG_ERR, "fopen(%s): %s", file, strerror(errno));
 		return NULL;
 	}
 
@@ -242,7 +252,7 @@ parse_file(const char *file)
 	r->type = RULE_CMD;
 	r->origin = strdup(file);
 	if (!r->origin) {
-		acpid_log(LOG_ERR, "strdup(): %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "strdup(): %s", strerror(errno));
 		free_rule(r);
 		fclose(fp);
 		return NULL;
@@ -275,12 +285,12 @@ parse_file(const char *file)
 		/* quick parse */
 		n = sscanf(p, "%63[^=\n]=%255[^\n]", key, val);
 		if (n != 2) {
-			acpid_log(LOG_WARNING, "can't parse %s at line %d\n",
+			acpid_log(LOG_WARNING, "can't parse %s at line %d",
 			    file, line);
 			continue;
 		}
 		if (acpid_debug >= 3) {
-			acpid_log(LOG_DEBUG, "    key=\"%s\" val=\"%s\"\n",
+			acpid_log(LOG_DEBUG, "    key=\"%s\" val=\"%s\"",
 			    key, val);
 		}
 		/* handle the parsed line */
@@ -288,7 +298,7 @@ parse_file(const char *file)
 			int rv;
 			r->event = malloc(sizeof(regex_t));
 			if (!r->event) {
-				acpid_log(LOG_ERR, "malloc(): %s\n",
+				acpid_log(LOG_ERR, "malloc(): %s",
 					strerror(errno));
 				free_rule(r);
 				fclose(fp);
@@ -298,14 +308,14 @@ parse_file(const char *file)
 			if (rv) {
 				char rbuf[128];
 				regerror(rv, r->event, rbuf, sizeof(rbuf));
-				acpid_log(LOG_ERR, "regcomp(): %s\n", rbuf);
+				acpid_log(LOG_ERR, "regcomp(): %s", rbuf);
 				free_rule(r);
 				fclose(fp);
 				return NULL;
 			}
 		} else if (!strcasecmp(key, "action")) {
 			if (check_escapes(val) < 0) {
-				acpid_log(LOG_ERR, "can't load file %s\n",
+				acpid_log(LOG_ERR, "can't load file %s",
 				    file);
 				free_rule(r);
 				fclose(fp);
@@ -313,7 +323,7 @@ parse_file(const char *file)
 			}
 			r->action.cmd = strdup(val);
 			if (!r->action.cmd) {
-				acpid_log(LOG_ERR, "strdup(): %s\n",
+				acpid_log(LOG_ERR, "strdup(): %s",
 					strerror(errno));
 				free_rule(r);
 				fclose(fp);
@@ -321,13 +331,13 @@ parse_file(const char *file)
 			}
 		} else {
 			acpid_log(LOG_WARNING,
-			    "unknown option '%s' in %s at line %d\n",
+			    "unknown option '%s' in %s at line %d",
 			    key, file, line);
 			continue;
 		}
 	}
 	if (!r->event || !r->action.cmd) {
-		acpid_log(LOG_INFO, "skipping incomplete file %s\n", file);
+		acpid_log(LOG_INFO, "skipping incomplete file %s", file);
 		free_rule(r);
 		fclose(fp);
 		return NULL;
@@ -343,7 +353,7 @@ acpid_add_client(int clifd, const char *origin)
 	struct rule *r;
 	int nrules = 0;
 
-	acpid_log(LOG_NOTICE, "client connected from %s\n", origin);
+	acpid_log(LOG_NOTICE, "client connected from %s", origin);
 
 	r = parse_client(clifd);
 	if (r) {
@@ -352,7 +362,7 @@ acpid_add_client(int clifd, const char *origin)
 		nrules++;
 	}
 
-	acpid_log(LOG_INFO, "%d client rule%s loaded\n",
+	acpid_log(LOG_INFO, "%d client rule%s loaded",
 	    nrules, (nrules == 1)?"":"s");
 
 	return 0;
@@ -373,7 +383,7 @@ parse_client(int client)
 	r->action.fd = client;
 	r->event = malloc(sizeof(regex_t));
 	if (!r->event) {
-		acpid_log(LOG_ERR, "malloc(): %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "malloc(): %s", strerror(errno));
 		free_rule(r);
 		return NULL;
 	}
@@ -381,7 +391,7 @@ parse_client(int client)
 	if (rv) {
 		char buf[128];
 		regerror(rv, r->event, buf, sizeof(buf));
-		acpid_log(LOG_ERR, "regcomp(): %s\n", buf);
+		acpid_log(LOG_ERR, "regcomp(): %s", buf);
 		free_rule(r);
 		return NULL;
 	}
@@ -431,7 +441,7 @@ new_rule(void)
 
 	r = malloc(sizeof(*r));
 	if (!r) {
-		acpid_log(LOG_ERR, "malloc(): %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "malloc(): %s", strerror(errno));
 		return NULL;
 	}
 
@@ -477,7 +487,7 @@ client_is_dead(int fd)
 	r = poll(&pfd, 1, 0);
 
 	if (r < 0) {
-		acpid_log(LOG_ERR, "poll(): %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "poll(): %s", strerror(errno));
 		return 0;
 	}
 
@@ -499,7 +509,7 @@ acpid_close_dead_clients(void)
 			struct ucred cred;
 			/* closed */
 			acpid_log(LOG_NOTICE,
-			    "client %s has disconnected\n", p->origin);
+			    "client %s has disconnected", p->origin);
 			delist_rule(&client_list, p);
 			ud_get_peercred(p->action.fd, &cred);
 			if (cred.uid != 0) {
@@ -539,7 +549,7 @@ acpid_handle_event(const char *event)
 				/* a match! */
 				if (logevents) {
 					acpid_log(LOG_INFO,
-					    "rule from %s matched\n",
+					    "rule from %s matched",
 					    p->origin);
 				}
 				nrules++;
@@ -549,13 +559,13 @@ acpid_handle_event(const char *event)
 					do_client_rule(p, event);
 				} else {
 					acpid_log(LOG_WARNING,
-					    "unknown rule type: %d\n",
+					    "unknown rule type: %d",
 					    p->type);
 				}
 			} else {
 				if (acpid_debug >= 3 && logevents) {
 					acpid_log(LOG_INFO,
-					    "rule from %s did not match\n",
+					    "rule from %s did not match",
 					    p->origin);
 				}
 			}
@@ -566,7 +576,7 @@ acpid_handle_event(const char *event)
 	unlock_rules();
 
 	if (logevents) {
-		acpid_log(LOG_INFO, "%d total rule%s matched\n",
+		acpid_log(LOG_INFO, "%d total rule%s matched",
 			nrules, (nrules == 1)?"":"s");
 	}
 
@@ -592,7 +602,7 @@ static void
 lock_rules(void)
 {
 	if (acpid_debug >= 4) {
-		acpid_log(LOG_DEBUG, "blocking signals for rule lock\n");
+		acpid_log(LOG_DEBUG, "blocking signals for rule lock");
 	}
 	sigprocmask(SIG_BLOCK, signals_handled(), NULL);
 }
@@ -601,7 +611,7 @@ static void
 unlock_rules(void)
 {
 	if (acpid_debug >= 4) {
-		acpid_log(LOG_DEBUG, "unblocking signals for rule lock\n");
+		acpid_log(LOG_DEBUG, "unblocking signals for rule lock");
 	}
 	sigprocmask(SIG_UNBLOCK, signals_handled(), NULL);
 }
@@ -620,14 +630,14 @@ do_cmd_rule(struct rule *rule, const char *event)
 	pid = fork();
 	switch (pid) {
 	case -1:
-		acpid_log(LOG_ERR, "fork(): %s\n", strerror(errno));
+		acpid_log(LOG_ERR, "fork(): %s", strerror(errno));
 		return -1;
 	case 0: /* child */
 		/* parse the commandline, doing any substitutions needed */
 		action = parse_cmd(rule->action.cmd, event);
 		if (logevents) {
 			acpid_log(LOG_INFO,
-			    "executing action \"%s\"\n", action);
+			    "executing action \"%s\"", action);
 		}
 
 		/* reset signals */
@@ -641,10 +651,11 @@ do_cmd_rule(struct rule *rule, const char *event)
 		if (acpid_debug && logevents) {
 			fprintf(stdout, "BEGIN HANDLER MESSAGES\n");
 		}
+		umask(0077);
 		execl("/bin/sh", "/bin/sh", "-c", action, NULL);
 		/* should not get here */
-		acpid_log(LOG_ERR, "execl(): %s\n", strerror(errno));
-		exit(EXIT_FAILURE);
+		acpid_log(LOG_ERR, "execl(): %s", strerror(errno));
+		_exit(EXIT_FAILURE);
 	}
 
 	/* parent */
@@ -655,13 +666,13 @@ do_cmd_rule(struct rule *rule, const char *event)
 
 	if (logevents) {
 		if (WIFEXITED(status)) {
-			acpid_log(LOG_INFO, "action exited with status %d\n",
+			acpid_log(LOG_INFO, "action exited with status %d",
 			    WEXITSTATUS(status));
 		} else if (WIFSIGNALED(status)) {
-			acpid_log(LOG_INFO, "action exited on signal %d\n",
+			acpid_log(LOG_INFO, "action exited on signal %d",
 			    WTERMSIG(status));
 		} else {
-			acpid_log(LOG_INFO, "action exited with status %d\n",
+			acpid_log(LOG_INFO, "action exited with status %d",
 			    status);
 		}
 	}
@@ -676,7 +687,7 @@ do_client_rule(struct rule *rule, const char *event)
 	int client = rule->action.fd;
 
 	if (logevents) {
-		acpid_log(LOG_INFO, "notifying client %s\n", rule->origin);
+		acpid_log(LOG_INFO, "notifying client %s", rule->origin);
 	}
 
 	r = safe_write(client, event, strlen(event));
@@ -684,7 +695,7 @@ do_client_rule(struct rule *rule, const char *event)
 		struct ucred cred;
 		/* closed */
 		acpid_log(LOG_NOTICE,
-		    "client %s has disconnected\n", rule->origin);
+		    "client %s has disconnected", rule->origin);
 		delist_rule(&client_list, rule);
 		ud_get_peercred(rule->action.fd, &cred);
 		if (cred.uid != 0) {
@@ -708,9 +719,9 @@ safe_write(int fd, const char *buf, int len)
 	int ntries = NTRIES;
 
 	do {
-		r = write(fd, buf+ttl, len-ttl);
+		r = TEMP_FAILURE_RETRY (write(fd, buf+ttl, len-ttl) );
 		if (r < 0) {
-			if (errno != EAGAIN && errno != EINTR) {
+			if (errno != EAGAIN) {
 				/* a legit error */
 				return r;
 			}
@@ -723,9 +734,8 @@ safe_write(int fd, const char *buf, int len)
 	} while (ttl < len && ntries);
 
 	if (!ntries) {
-		/* crap */
 		if (acpid_debug >= 2) {
-			acpid_log(LOG_ERR, "uh-oh! safe_write() timed out\n");
+			acpid_log(LOG_ERR, "safe_write() timed out");
 		}
 		return r;
 	}
@@ -762,7 +772,7 @@ parse_cmd(const char *cmd, const char *event)
 		buf[i++] = *p++;
 	}
 	if (acpid_debug >= 2) {
-		acpid_log(LOG_DEBUG, "expanded \"%s\" -> \"%s\"\n", cmd, buf);
+		acpid_log(LOG_DEBUG, "expanded \"%s\" -> \"%s\"", cmd, buf);
 	}
 
 	return buf;
@@ -781,11 +791,11 @@ check_escapes(const char *str)
 			p++;
 			if (!*p) {
 				acpid_log(LOG_WARNING,
-				    "invalid escape at EOL\n");
+				    "invalid escape at EOL");
 				return -1;
 			} else if (*p != '%' && *p != 'e') {
 				acpid_log(LOG_WARNING,
-				    "invalid escape \"%%%c\"\n", *p);
+				    "invalid escape \"%%%c\"", *p);
 				r = -1;
 			}
 		}

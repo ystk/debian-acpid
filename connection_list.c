@@ -22,8 +22,11 @@
 
 #include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "acpid.h"
+#include "log.h"
 
 #include "connection_list.h"
 
@@ -54,7 +57,7 @@ add_connection(struct connection *p)
 	if (nconnections < 0)
 		return;
 	if (nconnections >= MAX_CONNECTIONS) {
-		acpid_log(LOG_ERR, "Too many connections.\n");
+		acpid_log(LOG_ERR, "Too many connections.");
 		/* ??? This routine should return -1 in this situation so that */
 		/*   callers can clean up any open fds and whatnot.  */
 		return;
@@ -87,8 +90,11 @@ delete_connection(int fd)
 	for (i = 0; i < nconnections; ++i) {
 		/* if the file descriptors match, delete the connection */
 		if (connection_list[i].fd == fd) {
+			free(connection_list[i].pathname);
+			
 			--nconnections;
 			connection_list[i] = connection_list[nconnections];
+			
 			break;
 		}
 	}
@@ -113,6 +119,27 @@ find_connection(int fd)
 	for (i = 0; i < nconnections; ++i) {
 		/* if the file descriptors match, return the connection */
 		if (connection_list[i].fd == fd)
+			return &connection_list[i];
+	}
+
+	return NULL;
+}
+
+/*---------------------------------------------------------------*/
+
+struct connection *
+find_connection_name(char *pathname)
+{
+	int i;
+
+	/* for each connection */
+	for (i = 0; i < nconnections; ++i) {
+		/* skip null pathnames */
+		if (connection_list[i].pathname == NULL)
+			continue;
+
+		/* if the pathname matches, return the connection */
+		if (strcmp(connection_list[i].pathname, pathname) == 0)
 			return &connection_list[i];
 	}
 

@@ -33,12 +33,15 @@
 
 /* local */
 #include "acpid.h"
+#include "log.h"
 #include "connection_list.h"
 #include "input_layer.h"
 
+#include "inotify_handler.h"
+
 /*-----------------------------------------------------------------*/
 /* called when an inotify event is received */
-void process_inotify(int fd)
+static void process_inotify(int fd)
 {
 	int bytes;
 	/* union to avoid strict-aliasing problems */
@@ -49,40 +52,60 @@ void process_inotify(int fd)
 
 	bytes = read(fd, &eventbuf.buffer, sizeof(eventbuf.buffer));
 
-	acpid_log(LOG_DEBUG, "inotify read bytes: %d\n", bytes);
+	acpid_log(LOG_DEBUG, "inotify read bytes: %d", bytes);
 
 	/* eof is not expected */	
-	if (bytes == 0)
-	{
-		acpid_log(LOG_WARNING, "inotify fd eof encountered\n");
+	if (bytes == 0) {
+		acpid_log(LOG_WARNING, "inotify fd eof encountered");
 		return;
 	}
-	else if (bytes < 0)
-	{
+	else if (bytes < 0) {
 		/* EINVAL means buffer wasn't big enough.  See inotify(7). */
-		acpid_log(LOG_ERR, "inotify read error: %s (%d)\n",
+		acpid_log(LOG_ERR, "inotify read error: %s (%d)",
 			strerror(errno), errno);
-		acpid_log(LOG_ERR, "disconnecting from inotify\n");
+		acpid_log(LOG_ERR, "disconnecting from inotify");
 		delete_connection(fd);
 		return;
 	}
 
-	acpid_log(LOG_DEBUG, "inotify name len: %d\n", eventbuf.event.len);
+	acpid_log(LOG_DEBUG, "inotify name len: %d", eventbuf.event.len);
+
+	const int dnsize = 256;
+	char devname[dnsize];
 
 	/* if a name is included */
-	if (eventbuf.event.len > 0)
-	{
-		const int dnsize = 256;
-		char devname[dnsize];
-
+	if (eventbuf.event.len > 0) {
 		/* devname = ACPID_INPUTLAYERDIR + "/" + pevent -> name */
 		strcpy(devname, ACPID_INPUTLAYERDIR);
 		strcat(devname, "/");
 		strncat(devname, eventbuf.event.name, dnsize - strlen(devname) - 1);
+	}
 		
-		acpid_log(LOG_DEBUG, "inotify about to open: %s\n", devname);
+	/* if this is a create */
+	if (eventbuf.event.mask & IN_CREATE) {
+		acpid_log(LOG_DEBUG, "inotify about to open: %s", devname);
 
 		open_inputfile(devname);
+	}
+
+	/* if this is a delete */
+	if (eventbuf.event.mask & IN_DELETE) {
+		/* struct connection *c; */
+		
+		acpid_log(LOG_DEBUG, "inotify received a delete for: %s", devname);
+
+#if 0
+/* Switching back to the original ENODEV detection scheme.  See 
+   process_input() in input_layer.c. */
+/* keeping this for future reference */
+		/* search for the event file in the connection list */
+		/* ??? Or should we just have a delete_connection_name()? */
+		c = find_connection_name(devname);
+		
+		/* close that connection if found */
+		if (c)
+			delete_connection(c->fd);
+#endif
 	}
 }
 
@@ -95,31 +118,33 @@ void open_inotify(void)
 	struct connection c;
 
 	/* set up inotify */
-	fd = inotify_init();
+	fd = inotify_init1(IN_CLOEXEC);
 	
 	if (fd < 0) {
-		acpid_log(LOG_ERR, "inotify_init() failed: %s (%d)\n",
+		acpid_log(LOG_ERR, "inotify_init() failed: %s (%d)",
 			strerror(errno), errno);
 		return;
 	}
 	
-	acpid_log(LOG_DEBUG, "inotify fd: %d\n", fd);
+	acpid_log(LOG_DEBUG, "inotify fd: %d", fd);
 
-	/* watch for new files being created in /dev/input */
-	wd = inotify_add_watch(fd, ACPID_INPUTLAYERDIR, IN_CREATE);
+	/* watch for files being created or deleted in /dev/input */
+	wd = inotify_add_watch(fd, ACPID_INPUTLAYERDIR, IN_CREATE | IN_DELETE);
 
 	if (wd < 0) {
-		acpid_log(LOG_ERR, "inotify_add_watch() failed: %s (%d)\n",
+		acpid_log(LOG_ERR, "inotify_add_watch() failed: %s (%d)",
 			strerror(errno), errno);
 		close(fd);			
 		return;
 	}
 
-	acpid_log(LOG_DEBUG, "inotify wd: %d\n", wd);
+	acpid_log(LOG_DEBUG, "inotify wd: %d", wd);
 
 	/* add a connection to the list */
 	c.fd = fd;
 	c.process = process_inotify;
+	c.pathname = NULL;
+	c.kybd = 0;
 	add_connection(&c);
 }
 

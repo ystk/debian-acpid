@@ -75,8 +75,6 @@ main(int argc, char **argv)
 			progname, socketfile, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-	fcntl(sock_fd, F_SETFD, FD_CLOEXEC);
-
 	/* set stdout to be line buffered */
 	setvbuf(stdout, NULL, _IOLBF, 0);
 
@@ -217,8 +215,8 @@ read_line(int fd)
 		memset(buf+i, 0, buflen-i);
 
 		while (i < buflen) {
-			r = read(fd, buf+i, 1);
-			if (r < 0 && errno != EINTR) {
+			r = TEMP_FAILURE_RETRY (read(fd, buf+i, 1) );
+			if (r < 0) {
 				/* we should do something with the data */
 				fprintf(stderr, "ERR: read(): %s\n",
 					strerror(errno));

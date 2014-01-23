@@ -1,3 +1,141 @@
+* Thu Mar 29 2012  Ted Felix <http://www.tedfelix.com>
+  - 2.0.16 release
+    (configure.ac)  (Ted Felix)
+  - Add tests for required functions to configure.ac.
+    (configure.ac)  (Ted Felix)
+  - Move fchmod() before bind() on socket.  Debian bug #664705.
+    (sock.c ud_socket.c ud_socket.h)  (Ted Felix)
+  - Switch back to chown() as fchown() doesn't appear to work with sockets.
+    (sock.c)  (Ted Felix) 
+  - Add support for headphone (and other) jack switch events.
+    (input_layer.c)  (AlexanderR)
+  - Add notes on making the tarball.
+    (README)  (Ted Felix)
+
+* Thu Mar 15 2012  Ted Felix <http://www.tedfelix.com>
+  - 2.0.15 release
+    (configure.ac)  (Ted Felix)
+  - Improve man page (Debian bug #656676).  
+    (acpid.8 acpi_listen.8)  (Ted Felix)
+  X Change makefile to get rid of double slashes on install paths.
+    Note: This change was lost due to introduction of autoconf which
+    wiped out the old Makefile.
+    (Makefile)  (Gilles Espinasse)
+  - Switch from Makefile to autoconf build system.  Fix some related
+    warnings.
+    (Makefile Makefile.am README TODO acpi_ids.c acpi_ids.h acpid.h 
+    configure.ac connection_list.h event.c kacpimon/Makefile.am 
+    kacpimon/makefile proc.h sock.h)
+    (Cristian Rodriguez)
+  - Fix build warnings uncovered by new gcc settings from autoconf.
+    (inotify_handler.c input_layer.c kacpimon/acpi_ids.c kacpimon/acpi_ids.h 
+    kacpimon/connection_list.c kacpimon/connection_list.h 
+    kacpimon/input_layer.c kacpimon/kacpimon.c kacpimon/netlink.c netlink.c
+    proc.c sock.c)
+    (Ted Felix)
+  - Remove fcntl() calls to set FD_CLOEXEC and replace with
+    CLOEXEC flags within the various open(), recvmsg() and other calls.
+    Requires kernel version 2.6.23 and above.
+    (acpi_listen.c inotify_handler.c input_layer.c libnetlink.c netlink.c
+    proc.c ud_socket.c)
+    (Cristian Rodriguez)
+  - Add SOCK_NONBLOCK to ud_create_socket().
+    (ud_socket.c) (Cristian Rodriguez)
+  - Use isfdtype() instead of getsockopt() in is_socket().  Use fchmod(), 
+    fstat(), and fchown() instead of the non-"f" versions in open_sock().
+    (sock.c) (Cristian Rodriguez)
+  - Use __attribute__ for argument checking in acpid_log().
+    (input_layer.c log.h netlink.c ud_socket.c) (Cristian Rodriguez)
+  - Close only the open fds in close_fds().
+    (acpid.c) (Cristian Rodriguez)
+  - Use accept4() with SOCK_CLOEXEC and SOCK_NONBLOCK in ud_accept().
+    Remove unnecessary calls to fcntl() in process_sock().  
+    (sock.c ud_socket.c) (Cristian Rodriguez)
+  - Use asprintf() instead of snprintf() in process_sock().
+    (sock.c) (Cristian Rodriguez)
+  - Use TEMP_FAILURE_RETRY macro instead of bogus checks for EINTR.
+    (acpi_listen.c acpid.c event.c input_layer.c libnetlink.c netlink.c 
+    proc.c ud_socket.c) (Cristian Rodriguez)
+  - Use safer, faster, and more modern functions asprintf(), fstatat(), 
+    openat(), and fdopen() in the configuration file processing.
+    (event.c) (Cristian Rodriguez)
+
+* Thu Dec 15 2011  Ted Felix <http://www.tedfelix.com>
+  - 2.0.14 release
+  - Fixed brace style.  (inotify_handler.c acpid.c)  (Ted Felix)
+  - Added support for a "K" suffix on event strings to indicate that they
+    may have originated from a keyboard input layer device.  This can be
+    used to differentiate between a power switch on the keyboard, and a power
+    switch on the computer's case.
+    
+    (connection_list.h inotify_handler.c input_layer.c netlink.c proc.c
+    sock.c)  (Ted Felix)
+    
+  - Added a pathname to connection along with a find_connection_name().  
+    Modifications to process_inotify() to log IN_DELETE events.  Additional 
+    debugging output.
+      
+    These changes were experimentation related to dealing with a ThinkPad 
+    suspend problem.  They should have no effect on acpid's behavior.  They are 
+    mainly noticeable as a change in the logging.
+    
+    The Problem: When resuming from suspend, the lid switch and power button's 
+    /dev/input event files do not trigger an IN_CREATE, so acpid doesn't 
+    reconnect to them.  Restarting acpid fixes this.
+    
+    Tried using IN_DELETE instead of ENODEV to detect the drivers going away.
+    Worked fine for disconnecting/reconnecting a USB keyboard, but not for the
+    ThinkPad suspend problem.  I've given up on fixing this as it appears to be
+    a kernel or driver issue.
+    
+    (connection_list.c connection_list.h inotify_handler.c input_layer.c 
+    netlink.c proc.c sock.c)  (Ted Felix)
+      
+* Tue Nov 15 2011  Ted Felix <http://www.tedfelix.com>
+  - 2.0.13 release
+  - Fix for socket name buffer overflow.  (ud_socket.c)  (Ted Felix)
+  - Moved acpid_log() out of acpid.h/.c and into log.h/.c to make it easier
+    for all parts of acpid to use.  (Makefile acpid.h acpid.c connection_list.c
+    event.c inotify_handler.c input_layer.c log.h log.c netlink.c proc.c 
+    sock.c ud_socket.c)  (Ted Felix)
+  - Cleaned up #includes and comment style.  (libnetlink.c libnetlink.h)
+    (Ted Felix)
+
+* Mon Aug 15 2011  Ted Felix <http://www.tedfelix.com>
+  - 2.0.12 release
+  - Changed exit() to _exit() if execl() fails.  (event.c)  (Ted Felix)
+
+* Sat Jul 30 2011  Ted Felix <http://www.tedfelix.com>
+  - 2.0.11 release
+  - Set umask to 0077 for scripts run by acpid.  (event.c)  (Ted Felix)
+
+* Tue May 17 2011  Ted Felix <http://www.tedfelix.com>
+  - 2.0.10 release
+  - Fixed compiler warnings in kacpimon.  (kacpimon/libnetlink.c)
+    (Michael Meskes)
+  - systemd support.  The socket acpid creates to connect with clients can now
+    be passed as stdin (fd 0) at startup.  (acpid.c sock.h sock.c acpid.8)  
+    (Reiner Klussmeier)
+  - man page improvements  (acpid.8)  (Ted Felix)
+
+* Fri Apr 15 2011  Ted Felix <http://www.tedfelix.com>
+  - 2.0.9 release
+  - Removed newlines from acpid_log() calls and modified acpid_log() to
+    no longer need newlines.  This change to acpid prevents blank lines in
+    the log for versions of syslogd that preserve newlines.  (acpid.c 
+    connection_list.c event.c inotify_handler.c input_layer.c netlink.c 
+    proc.c sock.c)  (Michael Meskes, Ted Felix)
+  - Added fcntl() for O_NONBLOCK on the client sockets.  This prevents acpid
+    from hanging if a client behaves badly.  (sock.c)  (Vasiliy Kulikov)
+    From: http://www.openwall.com/lists/oss-security/2011/01/19/4
+  - Improvements to error handling.  (sock.c)  (Ted Felix)
+
+* Tue Feb 15 2011  Ted Felix <http://www.tedfelix.com>
+  - 2.0.8 release
+  - Fixed "comparison between signed and unsigned integer expressions"
+    error with gcc 4.6.  (libnetlink.c) (Eugeni Dodonov)
+  - Fixed unused variable "type" with gcc 4.6.  (libnetlink.c) (Jiri Skala)
+
 * Mon Nov 15 2010  Ted Felix <http://www.tedfelix.com>
   - 2.0.7 release
   - Reduced the startup logging and skipped processing of "." and ".."

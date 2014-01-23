@@ -3,6 +3,10 @@
  * A few  routines for handling UNIX domain sockets
  */
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -15,27 +19,47 @@
 #include <fcntl.h>
 
 #include "acpid.h"
+#include "log.h"
 #include "ud_socket.h"
 
 int
-ud_create_socket(const char *name)
+ud_create_socket(const char *name, mode_t socketmode)
 {
 	int fd;
 	int r;
 	struct sockaddr_un uds_addr;
 
-	/* JIC */
+    if (strnlen(name, sizeof(uds_addr.sun_path)) > 
+        sizeof(uds_addr.sun_path) - 1) {
+        acpid_log(LOG_ERR, "ud_create_socket(): "
+            "socket filename longer than %zu characters: %s",
+            sizeof(uds_addr.sun_path) - 1, name);
+        errno = EINVAL;
+        return -1;
+    }
+
+    /* JIC */
 	unlink(name);
 
-	fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 	if (fd < 0) {
 		return fd;
+	}
+
+	/* Clear the umask to guarantee predictable results from fchmod(). */
+	umask(0);
+
+	if (fchmod(fd, socketmode) < 0) {
+		close(fd);
+		acpid_log(LOG_ERR, "fchmod() on socket %s: %s",
+	        name, strerror(errno));
+		return -1;
 	}
 
 	/* setup address struct */
 	memset(&uds_addr, 0, sizeof(uds_addr));
 	uds_addr.sun_family = AF_UNIX;
-	strcpy(uds_addr.sun_path, name);
+    strncpy(uds_addr.sun_path, name, sizeof(uds_addr.sun_path) - 1);
 	
 	/* bind it to the socket */
 	r = bind(fd, (struct sockaddr *)&uds_addr, sizeof(uds_addr));
@@ -60,15 +84,10 @@ ud_accept(int listenfd, struct ucred *cred)
 		struct sockaddr_un cliaddr;
 		socklen_t len = sizeof(struct sockaddr_un);
 
-		newsock = accept(listenfd, (struct sockaddr *)&cliaddr, &len);
+		newsock = TEMP_FAILURE_RETRY (accept4(listenfd, (struct sockaddr *)&cliaddr, &len, SOCK_CLOEXEC|SOCK_NONBLOCK));
 		if (newsock < 0) {
-			if (errno == EINTR) {
-				continue; /* signal */
-			}
-		
 			return newsock;
 		}
-
 		if (cred) {
 			len = sizeof(struct ucred);
 			getsockopt(newsock,SOL_SOCKET,SO_PEERCRED,cred,&len);
@@ -85,7 +104,15 @@ ud_connect(const char *name)
 	int r;
 	struct sockaddr_un addr;
 
-	fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (strnlen(name, sizeof(addr.sun_path)) > sizeof(addr.sun_path) - 1) {
+        acpid_log(LOG_ERR, "ud_connect(): "
+            "socket filename longer than %zu characters: %s",
+            sizeof(addr.sun_path) - 1, name);
+        errno = EINVAL;
+        return -1;
+    }
+    
+	fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (fd < 0) {
 		return fd;
 	}
@@ -93,6 +120,8 @@ ud_connect(const char *name)
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	sprintf(addr.sun_path, "%s", name);
+    /* safer: */
+    /*strncpy(addr.sun_path, name, sizeof(addr.sun_path) - 1);*/
 
 	r = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
 	if (r < 0) {
