@@ -1,8 +1,78 @@
-acpid (1:2.0.16-1+deb7u1) testing-proposed-updates; urgency=low
+acpid (1:2.0.22-3) unstable; urgency=medium
 
-  * Fix acpid problem with systemd for testing, too. (Closes: #701538)
+  * Stop socket before upgrade or removal to make sure acpid isn't activated again.
 
- -- Michael Meskes <meskes@debian.org>  Sat, 13 Apr 2013 21:49:51 +0200
+ -- Michael Meskes <meskes@debian.org>  Fri, 11 Jul 2014 11:05:53 +0200
+
+acpid (1:2.0.22-2) unstable; urgency=medium
+
+  * Made service file honor options from /etc/default/acpid.
+    (Closes: #743611, #745589)
+
+ -- Michael Meskes <meskes@debian.org>  Tue, 17 Jun 2014 13:28:24 +0200
+
+acpid (1:2.0.22-1) unstable; urgency=medium
+
+  * Imported Upstream version 2.0.22 (closes: #738611)
+
+ -- Michael Meskes <meskes@debian.org>  Thu, 03 Apr 2014 10:48:59 +0200
+
+acpid (1:2.0.21-1) unstable; urgency=medium
+
+  * Imported Upstream version 2.0.21 (closes: #732277)
+  * Specify in acpid.init to start before lightdm and stop after lightdm.
+    Thanks to Dmitrijs Ledkovs <xnox@debian.org> (Closes: #731543)
+  * Fixed typo in default file. (Closes: #734420)
+  * Stop passing start option to dh_installinit. (Closes: #723623)
+  * Canonicalize VCS information.
+  * Bumped Standards-Version to 3.9.5, no changes needed.
+
+ -- Michael Meskes <meskes@debian.org>  Fri, 17 Jan 2014 09:03:19 +0100
+
+acpid (1:2.0.20-1) unstable; urgency=low
+
+  * Imported Upstream version 2.0.20 (Closes: #719659)
+
+ -- Michael Meskes <meskes@debian.org>  Tue, 17 Sep 2013 10:26:14 +0200
+
+acpid (1:2.0.19-1) unstable; urgency=low
+
+  * Imported Upstream version 2.0.19 (Closes: #701234)
+
+ -- Michael Meskes <meskes@debian.org>  Tue, 28 May 2013 16:52:28 +0200
+
+acpid (1:2.0.18-1) unstable; urgency=low
+
+  * Bumped Standards-Version to 3.9.4, no changes needed.
+  * Make systemd able to start acpid via multi-user.target.
+    Thanks to Michael Biebl <biebl@debian.org> (Closes: #699810)
+  * Imported Upstream version 2.0.18
+  * Updated watch file to new location.
+
+ -- Michael Meskes <meskes@debian.org>  Sun, 17 Feb 2013 08:55:50 +0100
+
+acpid (1:2.0.17-2) unstable; urgency=low
+
+  * Bump to debhelper compat level 9 and use the
+    DEB_CFLAGS_MAINT_{APPEND_PREPEND} options to change flags, trusting
+    dh_auto_configure to do the right thing, so that we get support for
+    cross-compilation and other niceties.
+    Thanks to Steve Langasek <steve.langasek@canonical.com> (Closes: #696213)
+
+ -- Michael Meskes <meskes@debian.org>  Fri, 21 Dec 2012 13:29:25 +0100
+
+acpid (1:2.0.17-1) unstable; urgency=low
+
+  * Imported Upstream version 2.0.17
+
+ -- Michael Meskes <meskes@debian.org>  Mon, 17 Sep 2012 14:20:55 +0200
+
+acpid (1:2.0.16-2) unstable; urgency=low
+
+  * Depend on kmod instead of the transitional package module-init-tools.
+    (Closes: #683987)
+
+ -- Michael Meskes <meskes@debian.org>  Wed, 08 Aug 2012 11:55:33 +0200
 
 acpid (1:2.0.16-1) unstable; urgency=low
 
