@@ -1,3 +1,20 @@
+acpid (1:2.0.23-2) unstable; urgency=medium
+
+  * Corrected homepage URL (Closes: #767816)
+  * Added path based activation so acpid gets started if events are to be
+    processed. (Closes: #766991)
+  * Bumped Standards-Version to 3.9.6, no changes needed.
+
+ -- Michael Meskes <meskes@debian.org>  Sat, 08 Nov 2014 17:36:34 +0100
+
+acpid (1:2.0.23-1) unstable; urgency=medium
+
+  * Adapted build system to use dh_systems_* helpers.
+    Thanks to Laurent Bigonville <bigon@debian.org> (Closes: #759541)
+  * Imported Upstream version 2.0.23
+
+ -- Michael Meskes <meskes@debian.org>  Thu, 28 Aug 2014 18:53:50 +0200
+
 acpid (1:2.0.22-3) unstable; urgency=medium
 
   * Stop socket before upgrade or removal to make sure acpid isn't activated again.

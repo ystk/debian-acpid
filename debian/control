@@ -4,11 +4,11 @@ Priority: optional
 Maintainer: Debian Acpi Team <pkg-acpi-devel@lists.alioth.debian.org>
 Uploaders: Michael Meskes <meskes@debian.org>,
            Loic Minier <lool@dooz.org>
-Standards-Version: 3.9.5
-Build-Depends: debhelper (>= 9), dpkg-dev (>= 1.15.7)
+Standards-Version: 3.9.6
+Build-Depends: debhelper (>= 9), dpkg-dev (>= 1.15.7), dh-systemd (>= 1.5)
 Vcs-Git: git://anonscm.debian.org/pkg-acpi/acpid.git
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=pkg-acpi/acpid.git
-Homepage: http://www.tedfelix.com/linux/acpid-netlink.html
+Homepage: http://sourceforge.net/projects/acpid2/
 
 Package: acpid
 Architecture: linux-any
