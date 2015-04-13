@@ -123,9 +123,6 @@
 /* Define to 1 if `vfork' works. */
 #define HAVE_WORKING_VFORK 1
 
-/* Define to 1 if your C compiler doesn't accept -c and -o together. */
-/* #undef NO_MINUS_C_MINUS_O */
-
 /* Name of package */
 #define PACKAGE "acpid"
 
@@ -136,7 +133,7 @@
 #define PACKAGE_NAME "acpid"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "acpid 2.0.22"
+#define PACKAGE_STRING "acpid 2.0.23"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "acpid"
@@ -145,7 +142,7 @@
 #define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "2.0.22"
+#define PACKAGE_VERSION "2.0.23"
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
@@ -173,7 +170,7 @@
 
 
 /* Version number of package */
-#define VERSION "2.0.22"
+#define VERSION "2.0.23"
 
 /* Enable large inode numbers on Mac OS X 10.5.  */
 #ifndef _DARWIN_USE_64_BIT_INODE
